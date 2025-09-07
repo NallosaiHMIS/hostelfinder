@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nallosai - Social Justice Hostels - ADTW</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    .page-header {
+  background: linear-gradient(to right, #0062cc, #004085); /* attractive gradient */
+  color: white;
+  text-align: center;
+  padding: 25px 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  border-bottom: 4px solid #003366;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+/* Optional: smaller font size on mobile */
+@media (max-width: 600px) {
+  .page-header h1 {
+    font-size: 18px;
+  }
+}
+    * { box-sizing: border-box; }
+    body, html {
+      margin: 0; padding: 0;
+      height: 100%; width: 100%;
+      font-family: 'Segoe UI', sans-serif;
+      background: #f4f6f8;
+    }
+    #map { height: 100vh; width: 100%; }
+.controls {
+  position: absolute;
+  top: 80px; /* space below heading */
+  right: 20px;
+  width: 260px;
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+    .controls select, .controls button {
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      min-width: 100px;
+    }
+
+    .controls button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      min-width: 140px;
+    }
+
+    .controls button:hover {
+      background: #0056b3;
+    }
+
+    @media (max-width: 600px) {
+  .controls {
+    position: static;
+    width: auto;
+    max-width: 95vw;
+    margin: 10px auto;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 15px;
+  }
+
+  .controls select, .controls button {
+    width: 100%;
+    min-width: unset;
+  }
+}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ✅ Correctly placed heading -->
+ <header class="page-header">
+  <h1>Adi Dravidar and Tribal Welfare Department</h1>
+</header>
+  <div class="controls">
+    <select id="districtFilter"><option value="">All Districts</option></select>
+    <select id="genderFilter">
+      <option value="">All Genders</option>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+    </select>
+    <select id="categoryFilter">
+      <option value="">All Categories</option>
+      <option value="College-PG">College‑PG</option>
+      <option value="College-UG">College‑UG</option>
+      <option value="Diploma">Diploma</option>
+      <option value="ITI">ITI</option>
+      <option value="School">School</option>
+    </select>
+    <button id="applyFilters">Search</button>
+    <button id="showNearby">Nearby Hostels</button><br>
+    <button id="resetFilters">Reset Filters</button>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const sheetURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRiQ9X5LJNpYgwBmfr7MNTgAkUfJjTipn89SAAsxirdRqa1pHk-wDCe0JT29IuVwAeCiasofZUqzcEf/pub?output=csv";
+
+    let map, userLat = 13.0827, userLon = 80.2707, hostelData = [], markers = [];
+    let currentMode = "all";
+
+    const genderIcons = {
+      "Male": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+      "Female": "https://cdn-icons-png.flaticon.com/512/3135/3135789.png",
+      "Unisex": "https://cdn-icons-png.flaticon.com/512/847/847969.png"
+    };
+
+    function getHaversineDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function initMap() {
+      map = L.map('map').setView([userLat, userLon], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+      }).addTo(map);
+
+      const userPopup = `
+        <b> You are here</b><br><br>
+        <a href="https://www.google.com/maps/search/?api=1&query=${userLat},${userLon}" 
+           target="_blank"
+        </a>
+      `;
+
+      L.circleMarker([userLat, userLon], {
+        radius: 8,
+        fillColor: "#007bff",
+        color: "#fff",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 1
+      }).addTo(map).bindPopup(userPopup).openPopup();
+    }
+
+    function fetchData() {
+      fetch(sheetURL)
+        .then(res => res.text())
+        .then(csvText => {
+          const parsed = Papa.parse(csvText, {
+            header: true,
+            skipEmptyLines: true,
+          });
+          hostelData = parsed.data;
+          populateDistricts();
+          showAllHostels();
+        });
+    }
+
+    function populateDistricts() {
+      const select = document.getElementById("districtFilter");
+      select.innerHTML = '<option value="">All Districts</option>';
+      const districts = new Set(hostelData.map(h => h["District Name"]).filter(Boolean));
+      districts.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d;
+        opt.textContent = d;
+        select.appendChild(opt);
+      });
+    }
+
+    function clearMarkers() {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+    }
+
+    function createPopupContent(h) {
+      let html = `<b>${h["Hostel Name"] || "Hostel"}</b><br><table style="border-collapse: collapse;">`;
+      for (const key in h) {
+        if (key === "Latitude" || key === "Longitude") continue;
+        let val = h[key] || "N/A";
+        html += `
+          <tr>
+            <td style="font-weight:bold; padding: 2px 6px; border: 1px solid #ddd;">${key}</td>
+            <td style="padding: 2px 6px; border: 1px solid #ddd;">${val}</td>
+          </tr>`;
+      }
+      html += `</table><br>
+        <a href="https://www.google.com/maps/dir/?api=1&destination=${h.Latitude},${h.Longitude}&travelmode=driving"
+           target="_blank"
+           style="color:white;background:#007bff;padding:6px 12px;border-radius:6px;text-decoration:none;">
+           🧭 Go To
+        </a>`;
+      return html;
+    }
+
+    function showAllHostels() {
+      clearMarkers();
+      currentMode = "all";
+
+      const district = document.getElementById("districtFilter").value;
+      const gender = document.getElementById("genderFilter").value;
+      const category = document.getElementById("categoryFilter").value;
+
+      const group = L.featureGroup();
+
+      hostelData.forEach(h => {
+        const lat = parseFloat(h.Latitude);
+        const lon = parseFloat(h.Longitude);
+        if (isNaN(lat) || isNaN(lon)) return;
+        if (district && h["District Name"] !== district) return;
+        if (gender && h["Hostel Gender Category"] !== gender) return;
+        if (category && h["Hostel Type"] !== category) return;
+
+        const icon = L.icon({
+          iconUrl: genderIcons[h["Hostel Gender Category"]] || genderIcons.Unisex,
+          iconSize: [32, 32],
+          iconAnchor: [16, 32]
+        });
+
+        const marker = L.marker([lat, lon], { icon }).bindPopup(createPopupContent(h));
+        marker.addTo(map);
+        markers.push(marker);
+        group.addLayer(marker);
+      });
+
+      if (markers.length > 0) {
+        map.fitBounds(group.getBounds().pad(0.3));
+      } else {
+        alert("No hostels match your filters.");
+        map.setView([userLat, userLon], 12);
+      }
+    }
+
+    function showNearbyHostels() {
+      clearMarkers();
+      currentMode = "nearby";
+
+      const gender = document.getElementById("genderFilter").value;
+      const category = document.getElementById("categoryFilter").value;
+      const group = L.featureGroup();
+
+      hostelData.forEach(h => {
+        const lat = parseFloat(h.Latitude);
+        const lon = parseFloat(h.Longitude);
+        if (isNaN(lat) || isNaN(lon)) return;
+
+        const dist = getHaversineDistance(userLat, userLon, lat, lon);
+        if (dist > 20) return;
+        if (gender && h["Hostel Gender Category"] !== gender) return;
+        if (category && h["Hostel Type"] !== category) return;
+
+        const icon = L.icon({
+          iconUrl: genderIcons[h["Hostel Gender Category"]] || genderIcons.Unisex,
+          iconSize: [32, 32],
+          iconAnchor: [16, 32]
+        });
+
+        const marker = L.marker([lat, lon], { icon }).bindPopup(createPopupContent(h));
+        marker.addTo(map);
+        markers.push(marker);
+        group.addLayer(marker);
+      });
+
+      if (markers.length > 0) {
+        map.fitBounds(group.getBounds().pad(0.3));
+      } else {
+        alert("No nearby hostels match your filters.");
+        map.setView([userLat, userLon], 13);
+      }
+    }
+
+    function resetFilters() {
+      document.getElementById("districtFilter").value = "";
+      document.getElementById("genderFilter").value = "";
+      document.getElementById("categoryFilter").value = "";
+      showAllHostels();
+    }
+
+    document.getElementById("applyFilters").addEventListener("click", showAllHostels);
+    document.getElementById("showNearby").addEventListener("click", showNearbyHostels);
+    document.getElementById("resetFilters").addEventListener("click", resetFilters);
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+        if (map) {
+          map.setView([userLat, userLon], 12);
+          const userPopup = `
+            <b>📍 You are here</b><br><br>
+            <a href="https://www.google.com/maps/search/?api=1&query=${userLat},${userLon}" 
+               target="_blank"
+            </a>
+          `;
+          L.circleMarker([userLat, userLon], {
+            radius: 8,
+            fillColor: "#007bff",
+            color: "#fff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 1
+          }).addTo(map).bindPopup(userPopup).openPopup();
+        }
+      }, () => {
+        console.warn("Geolocation denied or unavailable, defaulting to Chennai");
+      });
+    }
+    initMap();
+    fetchData();
+  </script>
+</body>
+</html>
