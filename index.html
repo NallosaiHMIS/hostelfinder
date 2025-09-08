@@ -8,28 +8,28 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <style>
     .page-header {
-  background: linear-gradient(to right, #0062cc, #004085); /* attractive gradient */
-  color: white;
-  text-align: center;
-  padding: 25px 10px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-  border-bottom: 4px solid #003366;
-}
+      background: linear-gradient(to right, #0062cc, #004085);
+      color: white;
+      text-align: center;
+      padding: 25px 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      border-bottom: 4px solid #003366;
+    }
 
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-}
+    .page-header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    }
 
-/* Optional: smaller font size on mobile */
-@media (max-width: 600px) {
-  .page-header h1 {
-    font-size: 18px;
-  }
-}
+    @media (max-width: 600px) {
+      .page-header h1 {
+        font-size: 18px;
+      }
+    }
+
     * { box-sizing: border-box; }
     body, html {
       margin: 0; padding: 0;
@@ -38,20 +38,22 @@
       background: #f4f6f8;
     }
     #map { height: 100vh; width: 100%; }
-.controls {
-  position: absolute;
-  top: 80px; /* space below heading */
-  right: 20px;
-  width: 260px;
-  background: white;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+
+    .controls {
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      width: 260px;
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
     .controls select, .controls button {
       font-size: 14px;
       padding: 6px 10px;
@@ -73,30 +75,29 @@
     }
 
     @media (max-width: 600px) {
-  .controls {
-    position: static;
-    width: auto;
-    max-width: 95vw;
-    margin: 10px auto;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 15px;
-  }
+      .controls {
+        position: static;
+        width: auto;
+        max-width: 95vw;
+        margin: 10px auto;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 15px;
+      }
 
-  .controls select, .controls button {
-    width: 100%;
-    min-width: unset;
-  }
-}
+      .controls select, .controls button {
+        width: 100%;
+        min-width: unset;
+      }
     }
   </style>
 </head>
 <body>
 
-  <!-- ✅ Correctly placed heading -->
- <header class="page-header">
-  <h1>Adi Dravidar and Tribal Welfare Department</h1>
-</header>
+  <header class="page-header">
+    <h1>Adi Dravidar and Tribal Welfare Department</h1>
+  </header>
+
   <div class="controls">
     <select id="districtFilter"><option value="">All Districts</option></select>
     <select id="genderFilter">
@@ -123,8 +124,8 @@
   <script>
     const sheetURL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRiQ9X5LJNpYgwBmfr7MNTgAkUfJjTipn89SAAsxirdRqa1pHk-wDCe0JT29IuVwAeCiasofZUqzcEf/pub?output=csv";
 
-    let map, userLat = 13.0827, userLon = 80.2707, hostelData = [], markers = [];
-    let currentMode = "all";
+    let map, userLat, userLon, userMarker = null;
+    let hostelData = [], markers = [];
 
     const genderIcons = {
       "Male": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
@@ -149,13 +150,11 @@
       }).addTo(map);
 
       const userPopup = `
-        <b> You are here</b><br><br>
+        <b>📍 You are here</b><br><br>
         <a href="https://www.google.com/maps/search/?api=1&query=${userLat},${userLon}" 
-           target="_blank"
-        </a>
       `;
 
-      L.circleMarker([userLat, userLon], {
+      userMarker = L.circleMarker([userLat, userLon], {
         radius: 8,
         fillColor: "#007bff",
         color: "#fff",
@@ -218,7 +217,6 @@
 
     function showAllHostels() {
       clearMarkers();
-      currentMode = "all";
 
       const district = document.getElementById("districtFilter").value;
       const gender = document.getElementById("genderFilter").value;
@@ -256,7 +254,6 @@
 
     function showNearbyHostels() {
       clearMarkers();
-      currentMode = "nearby";
 
       const gender = document.getElementById("genderFilter").value;
       const category = document.getElementById("categoryFilter").value;
@@ -303,34 +300,44 @@
     document.getElementById("showNearby").addEventListener("click", showNearbyHostels);
     document.getElementById("resetFilters").addEventListener("click", resetFilters);
 
+    // ✅ Geolocation with error guidance
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(pos => {
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
-        if (map) {
-          map.setView([userLat, userLon], 12);
-          const userPopup = `
-            <b>📍 You are here</b><br><br>
-            <a href="https://www.google.com/maps/search/?api=1&query=${userLat},${userLon}" 
-               target="_blank"
-            </a>
-          `;
-          L.circleMarker([userLat, userLon], {
-            radius: 8,
-            fillColor: "#007bff",
-            color: "#fff",
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 1
-          }).addTo(map).bindPopup(userPopup).openPopup();
+        initMap();
+        fetchData();
+      }, error => {
+        if (error.code === error.PERMISSION_DENIED) {
+          alert(`📍 Location access was denied.
+
+To re-enable location access:
+
+🔒 Chrome:
+1. Click/tap the lock icon (🔒) in the address bar
+2. Go to "Site Settings" → "Location" → "Allow"
+
+🦊 Firefox:
+1. Click the lock icon
+2. Go to "Permissions" → "Location" → "Allow"
+
+🍏 Safari (iPhone/iPad):
+1. Go to Settings → Safari → Location
+2. Find this site and set Location Access to "Allow"
+
+Then reload the page.`);
+        } else {
+          alert("Location unavailable. Some features may not work properly.");
         }
-      }, () => {
-        console.warn("Geolocation denied or unavailable, defaulting to Chennai");
+        // fallback to Tamil Nadu center
+        userLat = 11.1271;
+        userLon = 78.6569;
+        initMap();
+        fetchData();
       });
+    } else {
+      alert("Geolocation is not supported by your browser.");
     }
-    initMap();
-    fetchData();
   </script>
 </body>
 </html>
-
